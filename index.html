@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Image Compressor</title>
+<style>
+  body { font-family: sans-serif; text-align: center; padding: 50px; }
+  #drop { border: 2px dashed #ccc; padding: 50px; cursor: pointer; margin-bottom: 20px; }
+  img { max-width: 90%; margin-top: 20px; display: block; }
+  select { width: 300px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div id="drop">Drag & drop an image here or click to select</div>
+<input type="file" id="fileInput" accept="image/*" style="display:none">
+
+<div>
+  <label>Size:</label><br>
+  <select id="size">
+    <option value="500">For Post (500px wide)</option>
+    <option value="1500">For Header (1500px wide)</option>
+  </select>
+</div>
+
+<img id="preview" src="">
+<a id="download" href="#" download="compressed.jpg" style="display:none">Download Compressed Image</a>
+
+<script>
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const preview = document.getElementById('preview');
+const download = document.getElementById('download');
+const sizeSelect = document.getElementById('size');
+
+const FIXED_QUALITY = 0.15; // 15%
+
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', e => e.preventDefault());
+drop.addEventListener('drop', e => {
+  e.preventDefault();
+  handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+function handleFile(file) {
+  if (!file.type.startsWith('image/')) return alert('Not an image!');
+  const reader = new FileReader();
+  reader.onload = e => compressImage(e.target.result, FIXED_QUALITY, parseInt(sizeSelect.value), file.name);
+  reader.readAsDataURL(file);
+}
+
+function compressImage(src, quality, targetWidth, originalName) {
+  const img = new Image();
+  img.onload = () => {
+    const scale = targetWidth / img.width;
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = img.height * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      preview.src = url;
+      const suffix = targetWidth === 500 ? '_post' : '_header';
+      const newName = originalName.replace(/\.[^.]+$/, '') + suffix + '.jpg';
+      download.href = url;
+      download.download = newName;
+      download.style.display = 'inline-block';
+    }, 'image/jpeg', quality); // progressive + 4:2:0 implicit
+  };
+  img.src = src;
+}
+</script>
+
+</body>
+</html>
