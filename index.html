@@ -4,15 +4,31 @@
 <meta charset="UTF-8">
 <title>Image Compressor</title>
 <style>
-  body { font-family: sans-serif; text-align: center; padding: 50px; }
-  #drop { border: 2px dashed #ccc; padding: 50px; cursor: pointer; margin-bottom: 20px; }
+  body { background: white;font-family: monospace; font-size: 1rem; text-align: center; margin: 50px; padding: 25px;}
+  #drop { border: 2px dashed #ccc; padding: 50px; cursor: pointer; margin-top: 20px; }
   img { max-width: 90%; margin-top: 20px; display: block; }
-  select { width: 300px; margin-top: 10px; }
+  #preview {  max-width: fit-content;
+  margin-left: auto;
+  margin-right: auto;}
+  select,
+  input[type="text"] { font-family:monospace; margin: 10px 0px; }
+  label { font-size: .9rem; }
+  a#download { font-size: 2rem; text-decoration: none; margin: 10px 0px;border-bottom: 2px dotted blue }
 </style>
 </head>
 <body>
-<div id="drop">Drag & drop an image here or click to select</div>
-<input type="file" id="fileInput" accept="image/*" style="display:none">
+<div id="main">
+<h3>FORKIVERSE IMAGE COMPRESSOR</h3>
+<div>
+  <label>
+    <input type="checkbox" id="sizeBar">
+    Show size bar
+  </label>
+</div>
+
+<div>
+  <input type="text" size="60" id="customText" max="60" placeholder="Optional text (60 characters)">
+</div>
 
 <div>
   <label>Size:</label><br>
@@ -22,56 +38,104 @@
   </select>
 </div>
 
-<img id="preview" src="">
-<a id="download" href="#" download="compressed.jpg" style="display:none">Download Compressed Image</a>
+<div id="drop">Drag & drop an image here or click to select</div>
+<input type="file" id="fileInput" accept="image/*" style="display:none">
+
+<a id="download" style="display:none">> Download <</a>
+
+<img id="preview">
 
 <script>
+const FIXED_QUALITY = 0.15;
+const BAR_HEIGHT = 15;
+const FONT_SIZE = 7;
+
 const drop = document.getElementById('drop');
 const fileInput = document.getElementById('fileInput');
 const preview = document.getElementById('preview');
 const download = document.getElementById('download');
 const sizeSelect = document.getElementById('size');
+const sizeBar = document.getElementById('sizeBar');
+const customTextInput = document.getElementById('customText');
 
-const FIXED_QUALITY = 0.15; // 15%
+let originalBytes = 0;
 
-drop.addEventListener('click', () => fileInput.click());
-drop.addEventListener('dragover', e => e.preventDefault());
-drop.addEventListener('drop', e => {
+drop.onclick = () => fileInput.click();
+drop.ondragover = e => e.preventDefault();
+drop.ondrop = e => {
   e.preventDefault();
   handleFile(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+};
+fileInput.onchange = e => handleFile(e.target.files[0]);
 
 function handleFile(file) {
-  if (!file.type.startsWith('image/')) return alert('Not an image!');
-  const reader = new FileReader();
-  reader.onload = e => compressImage(e.target.result, FIXED_QUALITY, parseInt(sizeSelect.value), file.name);
-  reader.readAsDataURL(file);
+  if (!file.type.startsWith('image/')) return alert('Not an image');
+  originalBytes = file.size;
+
+  const r = new FileReader();
+  r.onload = e => compress(e.target.result, file.name);
+  r.readAsDataURL(file);
 }
 
-function compressImage(src, quality, targetWidth, originalName) {
+function compress(src, name) {
   const img = new Image();
   img.onload = () => {
-    const scale = targetWidth / img.width;
-    const canvas = document.createElement('canvas');
-    canvas.width = targetWidth;
-    canvas.height = img.height * scale;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const w = parseInt(sizeSelect.value);
+    const scale = w / img.width;
+    const barH = sizeBar.checked ? BAR_HEIGHT : 0;
 
-    canvas.toBlob(blob => {
-      const url = URL.createObjectURL(blob);
-      preview.src = url;
-      const suffix = targetWidth === 500 ? '_post' : '_header';
-      const newName = originalName.replace(/\.[^.]+$/, '') + suffix + '.jpg';
-      download.href = url;
-      download.download = newName;
-      download.style.display = 'inline-block';
-    }, 'image/jpeg', quality); // progressive + 4:2:0 implicit
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = img.height * scale + barH;
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, canvas.height - barH);
+
+    // First pass: estimate final size
+    canvas.toBlob(tempBlob => {
+      if (sizeBar.checked) {
+        const percent = ((1 - tempBlob.size / originalBytes) * 100).toFixed(0);
+        drawBar(ctx, canvas, originalBytes, tempBlob.size, percent);
+      }
+
+      // Final pass with bar baked in
+      canvas.toBlob(finalBlob => {
+        const url = URL.createObjectURL(finalBlob);
+        preview.src = url;
+
+        const suffix = w === 500 ? '_post' : '_header';
+        download.href = url;
+        download.download =
+          name.replace(/\.[^.]+$/, '') + suffix + '.jpg';
+        download.style.display = 'inline-block';
+      }, 'image/jpeg', FIXED_QUALITY);
+    }, 'image/jpeg', FIXED_QUALITY);
   };
   img.src = src;
 }
-</script>
 
+function drawBar(ctx, canvas, orig, final, percent) {
+  const y = canvas.height - BAR_HEIGHT;
+
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, y, canvas.width, BAR_HEIGHT);
+
+  ctx.fillStyle = '#000';
+  ctx.font = `${FONT_SIZE}pt monospace`;
+  ctx.textBaseline = 'middle';
+
+  let prefix = customTextInput.value.trim().toUpperCase();
+  if (prefix) prefix += ' · ';
+
+  const text = `${prefix}${kb(orig)} → ${kb(final)} [${percent}%]`;
+
+  ctx.fillText(text, 2, y + BAR_HEIGHT / 2);
+}
+
+function kb(b) {
+  return (b / 1024).toFixed(1) + ' KB';
+}
+</script>
+</div>
 </body>
 </html>
